@@ -2,63 +2,89 @@ import requests
 import json
 from PIL import Image
 from io import BytesIO
+import os
+from dotenv import load_dotenv
+from typing import List, Tuple, Dict, Any
 
-# -----------------
-# 1. 테스트 데이터 준비 (실제 이미지 파일 경로로 변경해야 함)
-# -----------------
-image_paths = ['data/banana.png', 'data/apple.png']
-texts = ['banana', 'apple']
+# .env 파일 로드 (API 키/CX ID가 스크립트 실행 시 로드되도록 함)
+load_dotenv() 
 
-# (선택) 임시 이미지 생성 (테스트 파일이 없다면)
-def create_dummy_image(filename):
-    """테스트용 빈 이미지 파일을 생성합니다."""
-    img = Image.new('RGB', (10, 10), color = 'yellow')
-    img.save(filename)
-    print(f"{filename} 생성 완료.")
-
-try:
-    for path in image_paths:
-        with open(path, 'rb') as f:
-            pass # 파일 존재 확인
-except FileNotFoundError:
-    print("경고: 테스트 이미지를 찾을 수 없습니다. 임시 더미 이미지를 생성합니다.")
-    for path in image_paths:
-        create_dummy_image(path)
-
-
-# 2. 요청 데이터 포맷팅
-files_data = []
-for path in image_paths:
-    # 'files' 필드에 튜플 형태로 (필드 이름, 파일 핸들, MIME 타입) 전달
-    # FastAPI는 'files'라는 이름으로 여러 파일을 받기를 기대합니다.
-    files_data.append(('files', (path.split('/')[-1], open(path, 'rb'), 'image/png')))
-
-# 'texts' 필드를 폼 데이터로 변환 (각 항목은 별도의 튜플로 전달)
-# FastAPI는 List[str]을 받기 위해 같은 필드 이름('texts')으로 여러 값을 기대합니다.
-texts_data = [('texts', t) for t in texts]
-
-# files_data와 texts_data를 결합
-data = texts_data + files_data
-
-# 3. API 호출
+# --- 환경 설정 ---
 API_URL = "http://127.0.0.1:8000/extract_and_visualize/"
+MODES_TO_TEST = ["BASIC_SEARCH", "CLIP_RERANK", "GENERATIVE"]
+# 테스트할 입력 데이터 (파일이 없다면 create_dummy_image 함수를 활성화하세요)
+TEST_IMAGE_PATHS = ['data/banana.png', 'data/apple.png']
+TEST_TEXTS = ['banana', 'apple']
 
-print("\nAPI 호출 시작...")
-try:
-    response = requests.post(API_URL, files=files_data, data=texts_data)
+
+def create_dummy_image(filename):
+    """테스트용 더미 이미지 파일을 생성합니다 (파일이 없을 경우)."""
+    if not os.path.exists(os.path.dirname(filename)):
+        os.makedirs(os.path.dirname(filename))
+    if not os.path.exists(filename):
+        img = Image.new('RGB', (50, 50), color='white')
+        img.save(filename)
+        print(f"경고: 파일이 없어 {filename} 더미 이미지 생성됨.")
+
+
+def run_test_for_mode(mode: str):
+    """특정 시각화 모드를 사용하여 API를 호출하고 결과를 출력합니다."""
     
-    # 파일을 닫습니다.
-    for _, file_tuple in files_data:
-        file_tuple[1].close()
-
-    # 4. 결과 출력
-    response.raise_for_status()
-    print("\n--- 서버 응답 성공 (200 OK) ---")
-    print(json.dumps(response.json(), indent=4, ensure_ascii=False))
-
-except requests.exceptions.RequestException as e:
-    print(f"\n--- 요청 실패 ---")
-    print(f"상태 코드: {response.status_code if 'response' in locals() else 'N/A'}")
-    print(f"오류 상세: {response.text if 'response' in locals() else e}")
+    print(f"\n--- 🚀 Model 2-C: {mode} 모드 테스트 시작 ---")
     
-# 임시 이미지가 생성되었다면 삭제하는 로직 추가
+    # 1. 파일 핸들링 및 데이터 포맷팅
+    files_data = []
+    
+    # 더미 이미지 생성 확인 (실제 이미지 파일 경로로 변경해야 함)
+    for path in TEST_IMAGE_PATHS:
+        # data 폴더가 없다면 생성 (test_api.py가 root에 있으므로)
+        os.makedirs('data', exist_ok=True) 
+        create_dummy_image(path) 
+        
+        # 파일 핸들러 (API 호출 시 열어서 전송)
+        files_data.append(('files', (os.path.basename(path), open(path, 'rb'), 'image/png')))
+
+    # 'texts' 필드를 폼 데이터로 변환 (각 항목은 별도의 튜플로 전달)
+    texts_data = [('texts', t) for t in TEST_TEXTS]
+    
+    # 2. API 호출 (파라미터로 모드 전달)
+    try:
+        response = requests.post(
+            API_URL, 
+            files=files_data, 
+            data=texts_data,
+            params={'visualization_mode': mode} # <--- 모드 전달
+        )
+        
+        # 3. 파일 핸들 닫기
+        for _, file_tuple in files_data:
+            file_tuple[1].close()
+
+        # 4. 결과 출력
+        response.raise_for_status() # HTTP 오류 발생 시 예외 발생
+        result_json = response.json()
+        
+        print(f"✅ 상태 코드: 200 OK")
+        print(f"   Hypernym: {result_json.get('hypernym')}")
+        print(f"   Image URL: {result_json.get('final_image_url')}")
+        print(f"   Mode Used: {result_json.get('visualization_mode')}")
+        
+        return result_json
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ 요청 실패 또는 서버 오류 발생 (Code: {response.status_code if 'response' in locals() else 'N/A'})")
+        print(f"   오류 상세: {e}")
+        return None
+
+
+if __name__ == "__main__":
+    print("--- 모든 시각화 모델 비교 테스트 시작 ---")
+    
+    # 테스트 데이터가 저장될 data 폴더 생성
+    os.makedirs('data', exist_ok=True)
+    
+    # 모든 모드를 순회하며 테스트 실행
+    for mode in MODES_TO_TEST:
+        run_test_for_mode(mode)
+
+    print("\n--- 모든 테스트 완료 ---")

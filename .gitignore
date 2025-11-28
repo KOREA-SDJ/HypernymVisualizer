@@ -1,13 +1,19 @@
-# Python 환경 관련
+# Python 필수 제외
 __pycache__/
 *.pyc
 venv/
 .pytest_cache/
 
-# 민감 정보 및 로그 파일 (필수)
+# 보안 (가장 중요! 절대 누락 금지)
 .env
-*.log
+.env.local
 
-# 운영체제/IDE 관련
+# 데이터 및 모델 파일 (용량이 큰 파일 제외)
+data/imagenet_index.json
+generated_images/
+*.png
+*.jpg
+
+# OS/IDE 설정
 .vscode/
 Thumbs.db
