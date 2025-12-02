@@ -1,22 +1,27 @@
-"""
-이 모듈은 NLTK WordNet 인터페이스를 사용하여 텍스트 간의 상위어 관계를 탐색합니다.
+"""NLTK WordNet 기반 상위어 탐색 모듈.
 
-입력된 단어들의 Synset(동의어 집합)을 찾고, 그들 간의 공통 상위어(Lowest Common Hypernym)를
-추출하며, 너무 추상적인 개념(예: Entity, Object)을 필터링하는 기능을 제공합니다.
+이 모듈은 NLTK WordNet 인터페이스를 사용하여 다수의 텍스트 입력에 대한
+공통된 상위어(Hypernym) 관계를 탐색합니다.
+특히 2개 이상의 입력이 주어졌을 때, 모든 단어가 공유하는 상위어 집합의 교집합을
+계산하여 가장 적합한 공통 조상 후보군을 추출합니다.
 """
 
 import nltk
 from nltk.corpus import wordnet as wn
 from typing import List, Dict, Set, Any
 
-# 필터링할 추상적인 상위어 목록 (너무 포괄적인 개념 제외)
+# 필터링할 추상적인 상위어 목록 (너무 포괄적이거나 시각화 불가능한 개념 제외)
 STOP_CONCEPTS = {
     'entity', 'physical_entity', 'abstraction', 'object', 'whole', 
-    'artifact', 'unit', 'matter', 'thing', 'being'
+    'artifact', 'unit', 'matter', 'thing', 'being', 'causal_agent',
+    'measure', 'psychological_feature', 'attribute', 'group', 'relation'
 }
 
 def _ensure_resources_loaded():
-    """NLTK WordNet 데이터가 있는지 확인하고 없으면 다운로드합니다."""
+    """NLTK WordNet 데이터 리소스의 존재 여부를 확인하고 다운로드합니다.
+
+    `wordnet`과 `omw-1.4` 코퍼스가 로컬에 없는 경우 자동으로 다운로드를 시도합니다.
+    """
     try:
         wn.ensure_loaded()
     except LookupError:
@@ -26,90 +31,93 @@ def _ensure_resources_loaded():
 
 
 def _calculate_weight(synset) -> float:
-    """Synset의 구체성(깊이)에 따라 가중치를 계산합니다.
-    
-    워드넷 계층 구조에서 더 깊이 있을수록(더 구체적일수록) 높은 가중치를 부여합니다.
+    """Synset의 계층적 깊이를 기반으로 가중치를 계산합니다.
+
+    깊이가 깊을수록(구체적일수록) 높은 점수를 부여하되, 지나친 편향을 막기 위해
+    완화된 계산식을 사용합니다.
+
+    Args:
+        synset: 가중치를 계산할 NLTK Synset 객체.
+
+    Returns:
+        float: 계산된 가중치 (소수점 4자리 반올림).
     """
-    # max_depth(): 루트(Entity)에서 해당 노드까지의 최대 깊이
     depth = synset.max_depth()
     
-    # 깊이가 0이면(루트) 가중치 0.1, 깊을수록 1.0에 가까워짐 (단순 휴리스틱)
-    # 예: depth 8 -> weight 0.8
-    weight = min(depth * 0.1, 2.0) 
+    # 깊이 가산점을 완화하여 일반적인 단어의 선택 기회를 높임
+    weight = 0.5 + (depth * 0.05)
     
-    # 너무 낮은 가중치는 보정
-    return max(weight, 0.1)
+    return round(weight, 4)
 
 
 def find_common_hypernym_candidates(texts: List[str]) -> List[Dict[str, Any]]:
-    """입력된 텍스트들의 공통 상위어 후보군과 가중치를 반환합니다.
+    """모든 입력 텍스트들의 공통 상위어(교집합) 후보군을 추출합니다.
+
+    입력된 모든 단어가 공통적으로 포함된 상위어 경로를 찾기 위해,
+    첫 번째 단어의 상위어 집합을 기준으로 나머지 단어들의 상위어 집합과
+    순차적인 교집합(Intersection) 연산을 수행합니다.
 
     Args:
-        texts (List[str]): 입력 텍스트 리스트 (예: ['sneaker', 'boot'])
+        texts (List[str]): 분석할 입력 텍스트 리스트 (예: ['car', 'bus', 'bicycle']).
 
     Returns:
-        List[Dict[str, Any]]: 후보군 리스트.
-            예: [{'text': 'footwear', 'weight': 0.8}, {'text': 'covering', 'weight': 0.5}]
+        List[Dict[str, Any]]: 공통 상위어 후보 딕셔너리의 리스트.
+            각 딕셔너리는 다음 키를 포함하며, 가중치 내림차순으로 정렬됩니다.
+            - 'text' (str): 상위어의 표제어.
+            - 'weight' (float): 계층 깊이에 따른 가중치.
+            - 'synset' (str): Synset 식별자.
     """
     _ensure_resources_loaded()
     
-    if not texts:
-        return []
+    # 1. 입력이 하나뿐인 경우 해당 단어의 모든 상위어 반환
+    if len(texts) == 1:
+        synsets = wn.synsets(texts[0].lower().replace(" ", "_"), pos=wn.NOUN)
+        common_candidates = {hyp for s in synsets for path in s.hypernym_paths() for hyp in path}
+    
+    # 2. 입력이 2개 이상인 경우 교집합 탐색
+    elif len(texts) >= 2:
+        synsets_list = []
+        for text in texts:
+            clean_text = text.lower().replace(" ", "_")
+            synsets = wn.synsets(clean_text, pos=wn.NOUN)
+            
+            if not synsets:
+                print(f"경고: 워드넷에서 단어를 찾을 수 없어 '{text}'는 제외됩니다.")
+                continue
+            synsets_list.append(synsets)
 
-    # 1. 각 입력 단어의 Synset 찾기
-    synsets_list = []
-    for text in texts:
-        # 텍스트를 소문자로 변환하고 '_'로 공백 대체 (WordNet 포맷)
-        clean_text = text.lower().replace(" ", "_")
-        synsets = wn.synsets(clean_text, pos=wn.NOUN) # 명사만 검색
-        
-        if not synsets:
-            print(f"경고: 워드넷에서 단어를 찾을 수 없습니다: '{text}'")
-            continue
-        synsets_list.append(synsets)
-
-    if len(synsets_list) < 2:
-        # 비교할 대상이 없으면 해당 단어의 상위어를 바로 반환 (단일 입력 시나리오 등)
-        if len(synsets_list) == 1:
-            common_hypernyms = {hyp for s in synsets_list[0] for hyp in s.hypernyms()}
-        else:
+        if not synsets_list:
             return []
+
+        # 첫 번째 텍스트의 모든 상위어 집합을 초기 기준으로 설정
+        initial_synsets = synsets_list[0]
+        all_hypernyms = {hyp for s in initial_synsets for path in s.hypernym_paths() for hyp in path}
+
+        # 나머지 텍스트들에 대해 순차적으로 교집합 연산 수행
+        for synsets_of_text in synsets_list[1:]:
+            current_text_hypernyms = {hyp for s in synsets_of_text for path in s.hypernym_paths() for hyp in path}
+            all_hypernyms = all_hypernyms.intersection(current_text_hypernyms)
+            
+            # 교집합이 공집합이 되면 조기 종료
+            if not all_hypernyms:
+                break
+        
+        common_candidates = all_hypernyms
+
     else:
-        # 2. 공통 상위어 탐색 (Pairwise Intersection)
-        # 첫 번째 단어의 Synset들과 두 번째 단어의 Synset들 간의 LCH(최저 공통 상위어)를 찾음
-        # 간단한 구현을 위해 첫 두 단어 기준으로 탐색 (확장 가능)
-        synsets_a = synsets_list[0]
-        synsets_b = synsets_list[1]
-        
-        common_candidates = set()
-        
-        for sa in synsets_a:
-            for sb in synsets_b:
-                # 두 Synset의 최저 공통 상위어 리스트 반환
-                lchs = sa.lowest_common_hypernyms(sb)
-                for lch in lchs:
-                    common_candidates.add(lch)
-                    # LCH의 상위어들도 후보에 포함 (경로 추적)
-                    for ancestor in lch.hypernym_paths()[0]:
-                        common_candidates.add(ancestor)
+        # 입력이 없는 경우
+        return []
 
     # 3. 필터링 및 가중치 계산
     results = []
     seen_texts = set()
 
-    # common_candidates는 Set이므로 순서가 없음 -> 리스트로 변환
-    if 'common_candidates' not in locals(): # 단일 단어 처리 등 예외 케이스
-         common_candidates = set()
-
     for synset in common_candidates:
-        # Lemma 이름 추출 (예: Synset('dog.n.01') -> 'dog')
         lemma_name = synset.lemmas()[0].name().replace('_', ' ')
         
-        # 필터링: 추상적인 개념 제외
+        # 필터링: 추상적 개념 및 중복 제외
         if lemma_name.lower() in STOP_CONCEPTS:
             continue
-            
-        # 중복 텍스트 제외
         if lemma_name in seen_texts:
             continue
 
@@ -118,7 +126,7 @@ def find_common_hypernym_candidates(texts: List[str]) -> List[Dict[str, Any]]:
         results.append({
             'text': lemma_name,
             'weight': weight,
-            'synset': synset.name() # 디버깅용
+            'synset': synset.name()
         })
         seen_texts.add(lemma_name)
 

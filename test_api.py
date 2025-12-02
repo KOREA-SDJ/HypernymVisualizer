@@ -1,90 +1,109 @@
 import requests
-import json
-from PIL import Image
-from io import BytesIO
 import os
+from PIL import Image
 from dotenv import load_dotenv
-from typing import List, Tuple, Dict, Any
 
-# .env 파일 로드 (API 키/CX ID가 스크립트 실행 시 로드되도록 함)
+# .env 파일 로드
 load_dotenv() 
 
 # --- 환경 설정 ---
 API_URL = "http://127.0.0.1:8000/extract_and_visualize/"
-MODES_TO_TEST = ["BASIC_SEARCH", "CLIP_RERANK", "GENERATIVE"]
-# 테스트할 입력 데이터 (파일이 없다면 create_dummy_image 함수를 활성화하세요)
-TEST_IMAGE_PATHS = ['data/banana.png', 'data/apple.png']
-TEST_TEXTS = ['banana', 'apple']
 
+# [수정] 3가지 모드 모두 테스트 (비교용)
+MODES_TO_TEST = ["BASIC_SEARCH", "CLIP_RERANK", "GENERATIVE"] 
 
-def create_dummy_image(filename):
-    """테스트용 더미 이미지 파일을 생성합니다 (파일이 없을 경우)."""
+# --- 🧪 테스트 시나리오 정의 ---
+TEST_SCENARIOS = [
+    {
+        "name": "🍌 과일 5종 테스트",
+        "data": [
+            {"path": "data/apple.png", "text": "apple"},
+            {"path": "data/banana.png", "text": "banana"},
+            {"path": "data/grape.png", "text": "grape"},
+            {"path": "data/orange.png", "text": "orange"},
+            {"path": "data/peach.png", "text": "peach"},
+        ]
+    },
+    {
+        "name": "🚗 운송 수단 5종 테스트",
+        "data": [
+            {"path": "data/car.png", "text": "passenger car"},
+            {"path": "data/bus.png", "text": "city bus"},
+            {"path": "data/bicycle.png", "text": "bicycle"},
+            {"path": "data/train.png", "text": "train"},
+            {"path": "data/airplane.png", "text": "airplane"},
+        ]
+    }
+]
+
+def create_dummy_image_if_missing(filename):
+    """파일이 없을 경우 테스트를 위해 더미 이미지를 생성합니다."""
     if not os.path.exists(os.path.dirname(filename)):
-        os.makedirs(os.path.dirname(filename))
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
     if not os.path.exists(filename):
-        img = Image.new('RGB', (50, 50), color='white')
+        print(f"⚠️ 경고: '{filename}' 파일이 없어 더미 이미지를 생성합니다. (결과 정확도 하락 가능)")
+        img = Image.new('RGB', (100, 100), color='skyblue')
         img.save(filename)
-        print(f"경고: 파일이 없어 {filename} 더미 이미지 생성됨.")
 
+def run_scenario(scenario):
+    """하나의 시나리오(이미지 묶음)에 대해 API를 호출합니다."""
+    print(f"\n\n============================================")
+    print(f"📢 시나리오 실행: {scenario['name']}")
+    print(f"============================================")
 
-def run_test_for_mode(mode: str):
-    """특정 시각화 모드를 사용하여 API를 호출하고 결과를 출력합니다."""
-    
-    print(f"\n--- 🚀 Model 2-C: {mode} 모드 테스트 시작 ---")
-    
-    # 1. 파일 핸들링 및 데이터 포맷팅
+    # 1. 데이터 준비
     files_data = []
-    
-    # 더미 이미지 생성 확인 (실제 이미지 파일 경로로 변경해야 함)
-    for path in TEST_IMAGE_PATHS:
-        # data 폴더가 없다면 생성 (test_api.py가 root에 있으므로)
-        os.makedirs('data', exist_ok=True) 
-        create_dummy_image(path) 
+    texts_data = []
+
+    for item in scenario['data']:
+        path = item['path']
+        text = item['text']
         
-        # 파일 핸들러 (API 호출 시 열어서 전송)
+        # 파일 확인 및 준비
+        create_dummy_image_if_missing(path)
+        
+        # 파일 핸들러 열기 ('files' 키 사용)
         files_data.append(('files', (os.path.basename(path), open(path, 'rb'), 'image/png')))
+        # 텍스트 데이터 준비 ('texts' 키 사용)
+        texts_data.append(('texts', text))
 
-    # 'texts' 필드를 폼 데이터로 변환 (각 항목은 별도의 튜플로 전달)
-    texts_data = [('texts', t) for t in TEST_TEXTS]
-    
-    # 2. API 호출 (파라미터로 모드 전달)
-    try:
-        response = requests.post(
-            API_URL, 
-            files=files_data, 
-            data=texts_data,
-            params={'visualization_mode': mode} # <--- 모드 전달
-        )
-        
-        # 3. 파일 핸들 닫기
-        for _, file_tuple in files_data:
-            file_tuple[1].close()
+    # 2. 각 모드별로 호출
+    for mode in MODES_TO_TEST:
+        print(f"\n--- [Mode: {mode}] 요청 중... ---")
+        try:
+            # 파일 포인터를 처음으로 되돌림 (재사용 위해)
+            for _, (_, f, _) in files_data:
+                f.seek(0)
 
-        # 4. 결과 출력
-        response.raise_for_status() # HTTP 오류 발생 시 예외 발생
-        result_json = response.json()
-        
-        print(f"✅ 상태 코드: 200 OK")
-        print(f"   Hypernym: {result_json.get('hypernym')}")
-        print(f"   Image URL: {result_json.get('final_image_url')}")
-        print(f"   Mode Used: {result_json.get('visualization_mode')}")
-        
-        return result_json
+            response = requests.post(
+                API_URL, 
+                files=files_data, 
+                data=texts_data,
+                params={'visualization_mode': mode},
+                timeout=180 # 생성형 모델 대기 시간 고려 (넉넉하게 3분)
+            )
+            
+            response.raise_for_status()
+            result = response.json()
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ 요청 실패 또는 서버 오류 발생 (Code: {response.status_code if 'response' in locals() else 'N/A'})")
-        print(f"   오류 상세: {e}")
-        return None
+            print(f"✅ 성공!")
+            print(f"   - 추출된 상위어: {result.get('hypernym')}")
+            print(f"   - 신뢰도 점수: {result.get('confidence_score')}")
+            print(f"   - 결과 이미지 URL: {result.get('final_image_url')}")
 
+        except Exception as e:
+            print(f"❌ 실패: {e}")
+            if 'response' in locals():
+                print(f"   서버 응답: {response.text}")
+
+    # 3. 파일 닫기
+    for _, (_, f, _) in files_data:
+        f.close()
 
 if __name__ == "__main__":
-    print("--- 모든 시각화 모델 비교 테스트 시작 ---")
-    
-    # 테스트 데이터가 저장될 data 폴더 생성
+    # data 폴더 생성
     os.makedirs('data', exist_ok=True)
     
-    # 모든 모드를 순회하며 테스트 실행
-    for mode in MODES_TO_TEST:
-        run_test_for_mode(mode)
-
-    print("\n--- 모든 테스트 완료 ---")
+    # 모든 시나리오 실행
+    for scenario in TEST_SCENARIOS:
+        run_scenario(scenario)

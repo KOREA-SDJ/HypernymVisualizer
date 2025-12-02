@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypernym Visualizer</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Hypernym Visualizer</h1>
+        <p class="subtitle">이미지와 텍스트를 입력하면 AI가 공통 상위어를 찾아 시각화합니다.</p>
+
+        <div class="input-section">
+            <div id="input-list">
+                </div>
+            <button type="button" id="add-btn" onclick="addInputPair()">+ 입력 추가하기</button>
+        </div>
+
+        <div class="controls">
+            <label for="mode-select">시각화 모드:</label>
+            <select id="mode-select">
+                <option value="CLIP_RERANK" selected>✨ CLIP 재랭킹 (추천)</option>
+                <option value="BASIC_SEARCH">🔎 기본 Google 검색</option>
+                <option value="GENERATIVE">🎨 AI 생성 (Stable Diffusion)</option>
+            </select>
+            <button id="submit-btn" onclick="submitData()">분석 시작</button>
+        </div>
+
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>AI가 분석 중입니다... (생성 모드는 시간이 걸릴 수 있습니다)</p>
+        </div>
+
+        <div id="result-section" class="hidden">
+            <h2>분석 결과</h2>
+            <div class="result-card">
+                <div class="info">
+                    <p><strong>공통 상위어:</strong> <span id="res-hypernym" class="highlight"></span></p>
+                    <p><strong>신뢰도 점수:</strong> <span id="res-score"></span></p>
+                    <p><strong>사용 모드:</strong> <span id="res-mode"></span></p>
+                </div>
+                <div class="image-container">
+                    <img id="res-image" src="" alt="Result Image">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
