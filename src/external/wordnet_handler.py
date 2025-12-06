@@ -45,6 +45,7 @@ def _calculate_weight(synset) -> float:
     depth = synset.max_depth()
     
     # 깊이 가산점을 완화하여 일반적인 단어의 선택 기회를 높임
+    # [가중치 공식] 기본 점수 0.5에 깊이 1당 0.05점씩 가산합니다.
     weight = 0.5 + (depth * 0.05)
     
     return round(weight, 4)
