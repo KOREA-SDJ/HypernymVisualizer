@@ -1,0 +1,16 @@
+Group,Hypernym,Model,CLIP Score
+Group 1 (Fruit),edible fruit,Basic Search,0.2386
+Group 1 (Fruit),edible fruit,CLIP Reranking,0.2922
+Group 1 (Fruit),edible fruit,Generative,0.2892
+Group 2 (Animal),carnivore,Basic Search,0.1974
+Group 2 (Animal),carnivore,CLIP Reranking,0.2585
+Group 2 (Animal),carnivore,Generative,0.2118
+Group 3 (Vehicle),conveyance,Basic Search,0.1853
+Group 3 (Vehicle),conveyance,CLIP Reranking,0.2153
+Group 3 (Vehicle),conveyance,Generative,0.216
+Group 4 (Furniture),furniture,Basic Search,0.2429
+Group 4 (Furniture),furniture,CLIP Reranking,0.3121
+Group 4 (Furniture),furniture,Generative,0.2579
+Group 5 (Instrument),musical instrument,Basic Search,0.3096
+Group 5 (Instrument),musical instrument,CLIP Reranking,0.3105
+Group 5 (Instrument),musical instrument,Generative,0.2572

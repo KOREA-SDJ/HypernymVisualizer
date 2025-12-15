@@ -198,8 +198,15 @@ async def extract_and_visualize(
         
     # 5. 최종 평가 및 결과 반환
     
-    # 최종 이미지 URL이 확정된 후, CLIP Score 계산
-    final_clip_score = calculate_clip_score_for_url(final_hypernym, final_image_url, CLIP_COMPONENTS)
+    # 생성형 모드일 때는 URL 대신 '로컬 파일 경로'를 써야 데드락을 피할 수 있습니다.
+    score_target_path = final_image_url
+    
+    if mode_used == "GENERATIVE" and 'generated_path' in locals() and generated_path:
+        # http://... 대신 generated_images/apple_generated.png 같은 로컬 경로 사용
+        score_target_path = generated_path
+
+    # 수정된 경로(score_target_path)로 점수 계산
+    final_clip_score = calculate_clip_score_for_url(final_hypernym, score_target_path, CLIP_COMPONENTS)
 
     return {
         "status": "success",
